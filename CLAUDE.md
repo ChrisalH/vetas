@@ -33,7 +33,7 @@ Un solo archivo, por secciones comentadas:
 6. **Mapa** (`MapView`): una sola instancia fija detrás de las pantallas. Fuentes GeoJSON (`routes`, `zones`, `focus-route`, `focus-zones`, `draft-*`). La animación dorada usa `line-gradient` con `line-progress`.
 7. **Pantallas**: bienvenida (con caminos SVG animados de fondo), inicio con mapa, historia, contar (formulario para publicar).
 8. **Navegación** por hash: `#/` bienvenida, `#/mapa`, `#/historia/:id`, `#/contar`.
-9. **Admin**: NO es una ruta de la app. Vive solo en `/vetas/admin/` (`admin/index.html`), que define `window.VETAS_ADMIN = true` y carga `../app.js`; con esa bandera `app.js` monta solo `mountAdmin` (sin mapa ni hash). `index.html#/admin` no existe a propósito. Login con Supabase Auth (email + contraseña); lista todas las historias, filtra visibles/ocultas, oculta/muestra y borra con confirmación.
+9. **Admin**: NO es una ruta de la app. Vive solo en `/vetas/admin/` (`admin/index.html`), que define `window.VETAS_ADMIN = true` y carga `../app.js`; con esa bandera `app.js` monta solo `mountAdmin` (sin mapa ni hash). `index.html#/admin` no es una ruta: si alguien llega ahí (por ejemplo por una copia vieja en caché del redirect anterior), `app.js` lo manda a `admin/`. Las únicas entradas son `/vetas/` y `/vetas/admin/`. Login con Supabase Auth (email + contraseña); lista todas las historias, filtra visibles/ocultas, oculta/muestra y borra con confirmación.
 
 ## Base de datos
 

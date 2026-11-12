@@ -2304,6 +2304,9 @@
   // La página /admin define window.VETAS_ADMIN: monta solo el admin, sin mapa ni rutas.
   if (window.VETAS_ADMIN) {
     mountAdmin(screens);
+  } else if (location.hash === '#/admin') {
+    // El admin solo se abre desde /admin. Esta dirección vieja se corrige sola.
+    location.replace('admin/');
   } else {
     MapView.init(document.getElementById('map'));
     loadStories().then(afterLoad);

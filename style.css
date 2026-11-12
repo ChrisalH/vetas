@@ -17,7 +17,7 @@
   --text-small: 0.9375rem;
   --text-body: 1.3125rem;
   --text-title: 2.375rem;
-  --text-hero: 5.75rem;
+  --text-hero: clamp(4rem, 24vw, 5.75rem);
 
   --gutter: 20px;
   --sheet-height: 60%;
@@ -36,6 +36,11 @@ html,
 body {
   height: 100%;
   margin: 0;
+  /* Arrastrar el mapa hacia abajo no tiene que recargar la página. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -48,6 +53,23 @@ body {
 
 a {
   color: inherit;
+}
+
+/* Sin demora ni zoom por doble toque en lo que se toca. */
+a,
+button,
+summary,
+label,
+.chip {
+  touch-action: manipulation;
+}
+
+/* El scroll interno de las hojas no arrastra a la página. */
+.sheet,
+.sheet__body,
+.welcome__content,
+.admin {
+  overscroll-behavior: contain;
 }
 
 button {
@@ -148,8 +170,10 @@ button {
   cursor: pointer;
 }
 
-.button:hover {
-  background: var(--cream-bright);
+@media (hover: hover) {
+  .button:hover {
+    background: var(--cream-bright);
+  }
 }
 
 .icon-button {
@@ -580,8 +604,10 @@ button {
   color: var(--cream);
 }
 
-.button--ghost:hover {
-  background: rgba(197, 194, 187, 0.12);
+@media (hover: hover) {
+  .button--ghost:hover {
+    background: rgba(197, 194, 187, 0.12);
+  }
 }
 
 .button:disabled {
@@ -681,7 +707,7 @@ body.is-admin #app {
 }
 
 .chip {
-  min-height: 40px;
+  min-height: 44px;
   padding-inline: 14px;
   border: 1px solid var(--cream);
   border-radius: 999px;
@@ -818,8 +844,10 @@ body.is-admin #app {
   color: var(--ground);
 }
 
-.button--danger-solid:hover {
-  background: #f1bdb7;
+@media (hover: hover) {
+  .button--danger-solid:hover {
+    background: #f1bdb7;
+  }
 }
 
 /* ---------- Movimiento reducido ---------- */
