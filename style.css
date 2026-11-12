@@ -1,0 +1,637 @@
+/* ---------- Paleta y tipografía ---------- */
+
+:root {
+  color-scheme: dark;
+
+  --ground: #222322;
+  --ground-deep: #181918;
+  --cream: #c5c2bb;
+  --cream-bright: #d9d6cf;
+  --muted: #94918b;
+  --gold: #c9a24b;
+  --veil: rgba(24, 25, 24, 0.78);
+
+  --font-display: 'IM Fell English', 'EB Garamond', Georgia, serif;
+  --font-body: 'EB Garamond', Garamond, Georgia, serif;
+
+  --text-small: 0.9375rem;
+  --text-body: 1.3125rem;
+  --text-title: 2.375rem;
+  --text-hero: 5.75rem;
+
+  --gutter: 20px;
+  --sheet-height: 60%;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ---------- Base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ground-deep);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.4;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
+#app {
+  position: relative;
+  width: min(100%, 480px);
+  height: 100dvh;
+  margin-inline: auto;
+  overflow: hidden;
+  background: var(--ground);
+}
+
+/* ---------- Mapa ---------- */
+
+#map {
+  position: absolute;
+  inset: 0;
+  background: var(--ground);
+}
+
+.maplibregl-ctrl-top-left {
+  top: calc(max(24px, env(safe-area-inset-top, 0px)) + 46px);
+  left: max(12px, env(safe-area-inset-left, 0px));
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact,
+.maplibregl-ctrl-attrib {
+  background: var(--veil);
+  color: var(--muted);
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--cream);
+}
+
+.maplibregl-ctrl-attrib-button {
+  filter: invert(0.85);
+}
+
+/* ---------- Pantallas ---------- */
+
+#screens {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Las pantallas dejan pasar los toques al mapa salvo en sus propios elementos. */
+.screen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: screen-in 0.3s var(--ease-out);
+}
+
+.screen > * {
+  pointer-events: auto;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.brand {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding-inline: 20px;
+  border: 0;
+  background: var(--cream);
+  color: var(--ground);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-style: italic;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--cream-bright);
+}
+
+.icon-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cream);
+  font-size: 1.375rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+  font-style: italic;
+}
+
+/* ---------- Bienvenida ---------- */
+
+.welcome {
+  pointer-events: auto;
+}
+
+.welcome__backdrop,
+.welcome__drawing,
+.welcome__veil {
+  position: absolute;
+  inset: 0;
+}
+
+.welcome__drawing {
+  width: 100%;
+  height: 100%;
+}
+
+/* Velo semitransparente con un blur suave sobre el mapa y los caminos. */
+.welcome__veil {
+  background: rgba(34, 35, 34, 0.6);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+}
+
+.welcome__content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+  padding-block: max(56px, env(safe-area-inset-top, 0px))
+    max(32px, env(safe-area-inset-bottom, 0px));
+  padding-inline: max(32px, env(safe-area-inset-left, 0px))
+    max(32px, env(safe-area-inset-right, 0px));
+}
+
+.welcome h1 {
+  font-size: var(--text-hero);
+  letter-spacing: -1px;
+}
+
+.welcome p {
+  margin: 0;
+}
+
+.welcome .button {
+  flex: none;
+  margin-top: auto;
+}
+
+/* ---------- Inicio ---------- */
+
+.home-brand {
+  position: absolute;
+  top: max(24px, env(safe-area-inset-top, 0px));
+  left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  font-size: var(--text-title);
+  text-decoration: none;
+}
+
+.vase-button {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top, 0px));
+  right: max(18px, env(safe-area-inset-right, 0px));
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 1px solid var(--cream);
+  border-radius: 50%;
+  background: var(--story-color);
+  transition: background 0.35s;
+}
+
+.story-card {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  min-height: 153px;
+  border-radius: 10px;
+  background: var(--story-color);
+  transition: background 0.35s;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.story-card__link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px 44px;
+  border-radius: inherit;
+  text-decoration: none;
+}
+
+.story-card__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.story-card__title {
+  font-family: var(--font-display);
+  font-size: 1.625rem;
+  font-style: italic;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.story-card__count {
+  flex: none;
+  font-size: var(--text-small);
+}
+
+.story-card__summary {
+  font-size: 1.0625rem;
+}
+
+.story-card__hint {
+  position: absolute;
+  bottom: 16px;
+  left: 20px;
+  margin: 0;
+  font-size: 0.875rem;
+  font-style: italic;
+  pointer-events: none;
+}
+
+.story-card--empty .story-card__link {
+  padding-bottom: 20px;
+}
+
+.story-card__retry {
+  align-self: flex-start;
+  min-height: 44px;
+  margin-top: 6px;
+  font-size: 1.125rem;
+}
+
+.story-card__arrows {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+/* ---------- Hojas: historia y contar ---------- */
+
+.sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  height: var(--sheet-height);
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-block: 16px max(20px, env(safe-area-inset-bottom, 0px));
+  padding-inline: max(24px, env(safe-area-inset-left, 0px))
+    max(24px, env(safe-area-inset-right, 0px));
+}
+
+.sheet--story {
+  background: var(--story-color);
+}
+
+.sheet--story .note {
+  color: var(--cream);
+}
+
+.sheet--compose {
+  background: var(--veil);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.sheet--short {
+  height: auto;
+}
+
+.sheet__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.sheet__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.sheet__text {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.42;
+}
+
+/* La tarjeta del inicio crece hasta cubrir el 60% de la pantalla. */
+.sheet--grow {
+  animation: sheet-grow 0.45s var(--ease-out);
+}
+
+@keyframes sheet-grow {
+  from {
+    right: 16px;
+    bottom: 24px;
+    left: 16px;
+    height: 153px;
+    border-radius: 10px;
+  }
+}
+
+.progress {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.progress__bar {
+  flex: 1;
+  height: 2px;
+  background: var(--cream);
+  opacity: 0.3;
+  transition: opacity 0.3s;
+}
+
+.progress__bar.is-done {
+  opacity: 1;
+}
+
+.progress__bar--gold {
+  background: var(--gold);
+}
+
+.sheet__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  cursor: pointer;
+}
+
+.sheet__body.is-changing {
+  animation: body-in 0.35s var(--ease-out);
+}
+
+@keyframes body-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.sheet__footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  margin-inline: -12px;
+}
+
+.text-button {
+  min-height: 44px;
+  padding-inline: 12px;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-small);
+  font-style: italic;
+  cursor: pointer;
+}
+
+.keepsake {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.keepsake__song {
+  font-size: 1.3125rem;
+  line-height: 1.3;
+}
+
+.keepsake__thought {
+  font-family: var(--font-display);
+  font-size: 1.5625rem;
+  font-style: italic;
+  line-height: 1.25;
+}
+
+/* ---------- Contar una historia ---------- */
+
+.sheet__label {
+  flex: 1;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.sheet__spacer {
+  width: 44px;
+}
+
+.sheet__top .icon-button:first-child {
+  margin-left: -12px;
+}
+
+.sheet__top .icon-button:last-child {
+  margin-right: -12px;
+}
+
+.sheet__lead {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.sheet__submit {
+  flex: none;
+  margin-top: auto;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field--grow {
+  min-height: 120px;
+  flex: 1;
+}
+
+.field__label {
+  font-size: 1.125rem;
+}
+
+.field__input {
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--cream);
+  border-radius: 0;
+  background: transparent;
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 1.25rem;
+}
+
+.field__input--area {
+  flex: 1;
+  resize: none;
+  line-height: 1.4;
+}
+
+.field__input::placeholder {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 1;
+}
+
+.field__input:focus-visible {
+  outline: 1px solid var(--cream);
+  outline-offset: 3px;
+}
+
+.field__error {
+  min-height: 1.2em;
+  margin: 0;
+  color: #e9a39c;
+  font-size: var(--text-small);
+}
+
+.field__error:empty {
+  min-height: 0;
+}
+
+.actions {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: auto;
+}
+
+.button--ghost {
+  border: 1px solid var(--cream);
+  background: transparent;
+  color: var(--cream);
+}
+
+.button--ghost:hover {
+  background: rgba(197, 194, 187, 0.12);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Círculo fijo en el centro: muestra el tamaño real de la zona. */
+.zone-picker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--cream);
+  border-radius: 50%;
+  background: rgba(24, 25, 24, 0.55);
+  color: var(--cream);
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-style: italic;
+  pointer-events: none !important;
+  transform: translate(-50%, -50%);
+}
+
+.discard {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--cream);
+  background: var(--ground-deep);
+}
+
+.discard p {
+  margin: 0;
+}
+
+/* ---------- Movimiento reducido ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .screen,
+  .sheet--grow,
+  .sheet__body.is-changing {
+    animation: none;
+  }
+
+  .story-card,
+  .vase-button {
+    transition: none;
+  }
+}

@@ -1,0 +1,24 @@
+:root {
+  color-scheme: dark;
+
+  --ground: #222322;
+  --ground-deep: #181918;
+  --river: #2b2d2c;
+  --cream: #c5c2bb;
+  --cream-bright: #d9d6cf;
+  --muted: #94918b;
+  --gold: #c9a24b;
+  --veil: rgba(24, 25, 24, 0.78);
+
+  --font-display: 'IM Fell English', 'EB Garamond', Georgia, serif;
+  --font-body: 'EB Garamond', Garamond, Georgia, serif;
+
+  --text-small: 0.9375rem;
+  --text-body: 1.3125rem;
+  --text-title: 2.375rem;
+  --text-hero: 5.75rem;
+
+  --gutter: 20px;
+  --sheet-height: 60%;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
