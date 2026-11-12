@@ -2,15 +2,28 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex" />
-    <meta http-equiv="refresh" content="0; url=../index.html#/admin" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#222322" />
+    <meta name="robots" content="noindex, nofollow" />
     <title>Vetas · Admin</title>
-    <script>
-      location.replace('../index.html#/admin');
-    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=IM+Fell+English:ital@0;1&display=swap"
+    />
+    <link rel="stylesheet" href="../style.css" />
   </head>
-  <body style="background: #222322; color: #c5c2bb; font-family: Georgia, serif">
-    <p><a href="../index.html#/admin" style="color: inherit">Ir al admin de Vetas</a></p>
+  <body>
+    <main id="app">
+      <div id="screens"></div>
+    </main>
+
+    <script>
+      window.VETAS_ADMIN = true;
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+    <script src="../app.js"></script>
   </body>
 </html>

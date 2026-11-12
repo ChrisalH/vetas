@@ -1,23 +1,39 @@
-# Vetas
+<div align="center">
 
-Mini historias de amor anónimas, dibujadas como caminos en el mapa de Buenos Aires.
+# 🏺 Vetas
 
-## Cómo verla
+*Mini historias de amor anónimas, dibujadas como caminos en el mapa de Buenos Aires.*
 
-Abrí `index.html` con doble clic en Chrome o Edge. No hace falta instalar nada, pero sí tener internet: el mapa, las librerías y las tipografías se cargan desde la web.
+### 👉 [chrisalh.github.io/vetas](https://chrisalh.github.io/vetas/)
 
-## Archivos
+</div>
 
-- `index.html`: la estructura de la página y las librerías.
-- `style.css`: colores, tipografías y diseño.
-- `app.js`: toda la lógica, el mapa y la conexión con Supabase.
+---
 
-## Supabase
+## ✨ De qué se trata
 
-La URL del proyecto y la publishable key están al principio de `app.js`. Son públicas y están pensadas para ir en la página. Nunca pongas la secret key (`sb_secret_...`) en ningún archivo del repo.
+Vetas es un lugar para reivindicar las mini historias de amor. Cada una es un recorrido: una serie de lugares de la ciudad donde algo pasó, unidos por una línea sobre el mapa.
 
-Para ocultar una historia: en Supabase, **Table Editor → stories**, marcá `hidden` como `true`.
+No hace falta que sean hermosas ni que no duelan. Alcanza con que sean historias.
 
-## Publicación
+## 🗺️ Qué podés hacer
 
-En GitHub: **Settings → Pages → Deploy from a branch → main / (root)**. La página queda en `https://<tu-usuario>.github.io/vetas/` y se actualiza sola con cada push.
+- 🧭 **Explorar** los caminos que dejaron otras personas y ver qué trazan en la ciudad.
+- 📖 **Leer** cada historia, parada por parada, y descubrir la canción y el pensamiento con los que cierra.
+- 🏺 **Contar la tuya:** marcás los lugares en el mapa, escribís qué pasó en cada uno y queda dibujada para siempre.
+
+## 🔒 Anónimo
+
+Nadie firma. No hay cuentas ni nombres: solo el camino que queda.
+
+## 📱 Pensado para el celular
+
+Está hecho para abrirse en el teléfono, con el mapa en la mano, aunque también se ve en la compu.
+
+---
+
+<div align="center">
+
+🏺 **[Entrá a Vetas](https://chrisalh.github.io/vetas/)**
+
+</div>
