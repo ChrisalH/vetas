@@ -621,6 +621,57 @@ button {
   margin: 0;
 }
 
+/* ---------- Compu: pantalla completa ---------- */
+
+@media (min-width: 900px) and (pointer: fine) {
+  #app,
+  body.is-admin #app {
+    width: 100%;
+  }
+
+  /* La tarjeta del inicio queda centrada abajo, sin estirarse. */
+  .story-card {
+    right: auto;
+    left: 50%;
+    width: min(560px, calc(100% - 32px));
+    transform: translateX(-50%);
+  }
+
+  /* Historia y formulario: panel a la izquierda, mapa a la derecha. */
+  .sheet {
+    top: 0;
+    right: auto;
+    width: 460px;
+    height: 100%;
+    padding-block: 28px 32px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .sheet--short {
+    top: auto;
+    height: auto;
+    bottom: 24px;
+    left: 24px;
+    padding-block: 16px 20px;
+    border-radius: 10px;
+  }
+
+  .sheet--grow {
+    animation: screen-in 0.3s var(--ease-out);
+  }
+
+  .maplibregl-ctrl-top-left {
+    top: 96px;
+    right: 24px;
+    left: auto;
+  }
+
+  .welcome__content {
+    width: min(640px, 100%);
+    margin-inline: auto;
+  }
+}
+
 /* ---------- Admin ---------- */
 
 body.is-admin #app {

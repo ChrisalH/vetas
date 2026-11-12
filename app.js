@@ -161,8 +161,9 @@
 
   var db = null;
   if (CONFIG.supabaseUrl && CONFIG.supabaseKey && window.supabase) {
+    // La sesión se guarda solo para el admin; el público nunca inicia sesión.
     db = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
+      auth: { persistSession: true, autoRefreshToken: true, storageKey: 'vetas-admin' },
     });
   }
 
@@ -227,6 +228,7 @@
     var query = db
       .from('stories')
       .select('id, title, color, song, thought, created_at, stops (position, place, body, lat, lng)')
+      .eq('hidden', false) // con la sesión de admin abierta, igual se muestran solo las visibles
       .order('created_at', { ascending: false })
       .limit(CONFIG.maxStories);
 
@@ -291,6 +293,20 @@
      Todo el texto entra con textContent, así nadie puede inyectar código.
      ========================================================== */
 
+  // En compu el mapa ocupa toda la pantalla y las hojas pasan a un panel a la izquierda.
+  var WIDE_QUERY = '(min-width: 900px) and (pointer: fine)';
+  var PANEL_WIDTH = 460;
+
+  function isWide() {
+    return !!(window.matchMedia && window.matchMedia(WIDE_QUERY).matches);
+  }
+
+  // Espacio que tapa la hoja, para encuadrar el camino en lo que queda visible del mapa.
+  function sheetPadding(top, extraBottom, root) {
+    if (isWide()) return { top: top + 30, bottom: 60, left: PANEL_WIDTH + 60, right: 60 };
+    return { top: top, bottom: root.clientHeight * 0.6 + extraBottom, left: 48, right: 48 };
+  }
+
   function h(tag, attributes) {
     var element = document.createElement(tag);
     var children = Array.prototype.slice.call(arguments, 2);
@@ -304,9 +320,12 @@
       }
     });
 
-    children.forEach(function (child) {
-      element.append(child);
-    });
+    (function add(list) {
+      list.forEach(function (child) {
+        if (Array.isArray(child)) add(child);
+        else element.append(child);
+      });
+    })(children);
     return element;
   }
 
@@ -1382,7 +1401,7 @@
 
     // La hoja ocupa el 60% de abajo; el camino tiene que entrar en el 40% de arriba.
     function padding() {
-      return { top: 70, bottom: root.clientHeight * 0.6 + 40, left: 48, right: 48 };
+      return sheetPadding(70, 40, root);
     }
 
     function render() {
@@ -1692,7 +1711,7 @@
       MapView.setInteractive(false);
       var stop = draft.stops[editing];
       MapView.setDraft(draft.stops, draft.color);
-      MapView.frameStops(draft.stops, { top: 50, bottom: root.clientHeight * 0.6 + 30, left: 48, right: 48 });
+      MapView.frameStops(draft.stops, sheetPadding(50, 30, root));
 
       var place = field('compose-place', '¿A dónde fueron?', {
         max: LIMITS.place,
@@ -1849,7 +1868,7 @@
     function showDone() {
       MapView.setInteractive(false);
       var story = published;
-      MapView.focusStory(story, { padding: { top: 70, bottom: root.clientHeight * 0.6 + 40, left: 48, right: 48 } }).then(
+      MapView.focusStory(story, { padding: sheetPadding(70, 40, root) }).then(
         function () {
           MapView.goldStory(story);
         },
@@ -1879,6 +1898,327 @@
   }
 
   /* ==========================================================
+     Pantalla: admin
+     Solo entra quien tenga usuario en Supabase y figure en la tabla admins.
+     Las reglas de la base son las que protegen: esta pantalla solo las usa.
+     ========================================================== */
+
+  var DATE_FORMAT = new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeStyle: 'short' });
+
+  function mountAdmin(root) {
+    MapView.setInteractive(false);
+    document.body.classList.add('is-admin');
+
+    var screen = h('section', { class: 'screen admin' });
+    root.append(screen);
+
+    var adminStories = [];
+    var filter = 'all';
+    var alive = true;
+
+    function render(children) {
+      if (!alive) return;
+      screen.replaceChildren(h('div', { class: 'admin__inner' }, children));
+    }
+
+    function header(withLogout) {
+      return h(
+        'header',
+        { class: 'admin__header' },
+        h('a', { class: 'brand admin__brand', href: '#/' }, 'Vetas'),
+        withLogout
+          ? h('button', { class: 'text-button', type: 'button', onClick: logout }, 'Cerrar sesión')
+          : '',
+      );
+    }
+
+    function message(title, text, extra) {
+      render([header(false), h('h1', { class: 'admin__title' }, title), h('p', { class: 'admin__text' }, text), extra || '']);
+    }
+
+    function logout() {
+      db.auth.signOut().finally(showLogin);
+    }
+
+    /* ---------- Login ---------- */
+
+    function showLogin() {
+      var email = h('input', {
+        id: 'admin-email',
+        class: 'field__input',
+        type: 'email',
+        autocomplete: 'username',
+        required: '',
+      });
+      var password = h('input', {
+        id: 'admin-password',
+        class: 'field__input',
+        type: 'password',
+        autocomplete: 'current-password',
+        required: '',
+      });
+      var error = h('p', { class: 'field__error', role: 'alert' });
+      var submit = h('button', { class: 'button', type: 'submit' }, 'Entrar');
+
+      var form = h(
+        'form',
+        { class: 'admin__login', novalidate: '' },
+        h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'admin-email' }, 'Usuario (email)'), email),
+        h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'admin-password' }, 'Contraseña'), password),
+        error,
+        submit,
+      );
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!email.value.trim() || !password.value) {
+          error.textContent = 'Completá el usuario y la contraseña.';
+          return;
+        }
+        submit.disabled = true;
+        submit.textContent = 'Entrando…';
+        error.textContent = '';
+        db.auth
+          .signInWithPassword({ email: email.value.trim(), password: password.value })
+          .then(function (result) {
+            if (result.error) throw result.error;
+            return checkAdmin();
+          })
+          .catch(function (problem) {
+            console.warn('No se pudo iniciar sesión.', problem);
+            submit.disabled = false;
+            submit.textContent = 'Entrar';
+            error.textContent = 'Usuario o contraseña incorrectos.';
+            password.value = '';
+            password.focus();
+          });
+      });
+
+      render([header(false), h('h1', { class: 'admin__title' }, 'Administrar historias'), form]);
+      email.focus();
+    }
+
+    /* ---------- Permiso ---------- */
+
+    function checkAdmin() {
+      return db.rpc('is_admin').then(function (result) {
+        if (result.error) throw result.error;
+        if (result.data === true) {
+          loadAll();
+        } else {
+          message(
+            'Esta cuenta no puede administrar',
+            'Iniciaste sesión, pero tu usuario no está en la tabla de admins de Supabase.',
+            h('button', { class: 'button', type: 'button', onClick: logout }, 'Cerrar sesión'),
+          );
+        }
+      });
+    }
+
+    /* ---------- Lista ---------- */
+
+    function loadAll() {
+      message('Administrar historias', 'Cargando historias…');
+      db.from('stories')
+        .select('id, title, color, song, thought, hidden, created_at, stops (position, place, body)')
+        .order('created_at', { ascending: false })
+        .limit(500)
+        .then(function (result) {
+          if (result.error) throw result.error;
+          adminStories = result.data.map(function (row) {
+            row.stops = (row.stops || []).slice().sort(function (a, b) {
+              return a.position - b.position;
+            });
+            return row;
+          });
+          showList();
+        })
+        .catch(function (problem) {
+          console.warn('No se pudieron cargar las historias.', problem);
+          message(
+            'No pudimos cargar las historias',
+            'Revisá tu conexión y probá de nuevo.',
+            h('button', { class: 'button', type: 'button', onClick: loadAll }, 'Reintentar'),
+          );
+        });
+    }
+
+    function showList() {
+      var visibleCount = adminStories.filter(function (s) { return !s.hidden; }).length;
+      var hiddenCount = adminStories.length - visibleCount;
+
+      var filters = h(
+        'div',
+        { class: 'admin__filters', role: 'group', 'aria-label': 'Filtrar historias' },
+        [
+          ['all', 'Todas (' + adminStories.length + ')'],
+          ['visible', 'Visibles (' + visibleCount + ')'],
+          ['hidden', 'Ocultas (' + hiddenCount + ')'],
+        ].map(function (option) {
+          var button = h(
+            'button',
+            {
+              class: 'chip',
+              type: 'button',
+              'aria-pressed': String(filter === option[0]),
+              onClick: function () {
+                filter = option[0];
+                showList();
+              },
+            },
+            option[1],
+          );
+          return button;
+        }),
+      );
+
+      var shown = adminStories.filter(function (story) {
+        if (filter === 'visible') return !story.hidden;
+        if (filter === 'hidden') return story.hidden;
+        return true;
+      });
+
+      var list = shown.length
+        ? h('ul', { class: 'admin__list' }, shown.map(storyRow))
+        : h('p', { class: 'admin__text' }, filter === 'all' ? 'Todavía no hay historias.' : 'No hay historias en este filtro.');
+
+      render([
+        header(true),
+        h('h1', { class: 'admin__title' }, 'Administrar historias'),
+        filters,
+        list,
+      ]);
+    }
+
+    function storyRow(story) {
+      var status = h('span', { class: story.hidden ? 'status status--hidden' : 'status' }, story.hidden ? 'Oculta' : 'Visible');
+      var error = h('p', { class: 'field__error', role: 'alert' });
+
+      var toggle = h(
+        'button',
+        { class: 'button button--ghost button--small', type: 'button' },
+        story.hidden ? 'Mostrar' : 'Ocultar',
+      );
+      toggle.addEventListener('click', function () {
+        toggle.disabled = true;
+        error.textContent = '';
+        db.from('stories')
+          .update({ hidden: !story.hidden })
+          .eq('id', story.id)
+          .select('id')
+          .then(function (result) {
+            if (result.error) throw result.error;
+            if (!result.data || result.data.length === 0) throw new Error('Sin permiso');
+            story.hidden = !story.hidden;
+            showList();
+          })
+          .catch(function (problem) {
+            console.warn('No se pudo cambiar la historia.', problem);
+            toggle.disabled = false;
+            error.textContent = 'No se pudo guardar el cambio. Probá de nuevo.';
+          });
+      });
+
+      var remove = h('button', { class: 'button button--ghost button--small button--danger', type: 'button' }, 'Borrar');
+      var actions = h('div', { class: 'admin__actions' }, toggle, remove);
+
+      // Borrar pide confirmación en la misma fila.
+      remove.addEventListener('click', function () {
+        var confirmBox = h(
+          'div',
+          { class: 'admin__confirm', role: 'alertdialog', 'aria-label': 'Confirmar borrado' },
+          h('p', {}, 'Se borra para siempre, con todas sus salidas.'),
+          h(
+            'div',
+            { class: 'admin__actions' },
+            h('button', { class: 'button button--ghost button--small', type: 'button', onClick: function () { confirmBox.replaceWith(actions); } }, 'Cancelar'),
+            h('button', { class: 'button button--small button--danger-solid', type: 'button', onClick: confirmDelete }, 'Borrar'),
+          ),
+        );
+        actions.replaceWith(confirmBox);
+        confirmBox.querySelector('button').focus();
+
+        function confirmDelete(event) {
+          event.target.disabled = true;
+          db.from('stories')
+            .delete()
+            .eq('id', story.id)
+            .select('id')
+            .then(function (result) {
+              if (result.error) throw result.error;
+              if (!result.data || result.data.length === 0) throw new Error('Sin permiso');
+              adminStories = adminStories.filter(function (s) {
+                return s.id !== story.id;
+              });
+              showList();
+            })
+            .catch(function (problem) {
+              console.warn('No se pudo borrar la historia.', problem);
+              confirmBox.replaceWith(actions);
+              error.textContent = 'No se pudo borrar. Probá de nuevo.';
+            });
+        }
+      });
+
+      var details = h(
+        'details',
+        { class: 'admin__details' },
+        h('summary', {}, 'Leer la historia'),
+        h(
+          'ol',
+          { class: 'admin__stops' },
+          story.stops.map(function (stop) {
+            return h('li', {}, h('strong', {}, stop.place), h('p', {}, stop.body));
+          }),
+        ),
+        h('p', {}, h('span', { class: 'note' }, 'Canción: '), story.song),
+        h('p', {}, h('span', { class: 'note' }, 'Pensamiento: '), story.thought),
+      );
+
+      var row = h(
+        'li',
+        { class: story.hidden ? 'admin__story is-hidden' : 'admin__story' },
+        h(
+          'div',
+          { class: 'admin__story-head' },
+          h('span', { class: 'admin__swatch', 'aria-hidden': 'true' }),
+          h('div', { class: 'admin__story-text' }, h('strong', { class: 'admin__story-title' }, story.title),
+            h('span', { class: 'note' }, DATE_FORMAT.format(new Date(story.created_at)) + ' · ' + outingsLabel(story.stops.length))),
+          status,
+        ),
+        details,
+        actions,
+        error,
+      );
+      row.style.setProperty('--story-color', story.color);
+      return row;
+    }
+
+    /* ---------- Inicio ---------- */
+
+    if (!db) {
+      message('Supabase no está configurado', 'Completá la URL y la key al principio de app.js.');
+    } else {
+      db.auth.getSession().then(function (result) {
+        if (result.data && result.data.session) {
+          checkAdmin().catch(function () {
+            showLogin();
+          });
+        } else {
+          showLogin();
+        }
+      });
+    }
+
+    return function () {
+      alive = false;
+      document.body.classList.remove('is-admin');
+      // Al salir del admin, el mapa público se actualiza con los cambios.
+      loadStories().then(afterLoad);
+    };
+  }
+
+  /* ==========================================================
      Navegación
      ========================================================== */
 
@@ -1886,6 +2226,7 @@
     { name: 'home', pattern: /^#\/mapa$/, mount: mountHome },
     { name: 'story', pattern: /^#\/historia\/([^/]+)$/, mount: mountStory, params: ['id'] },
     { name: 'compose', pattern: /^#\/contar$/, mount: mountCompose },
+    { name: 'admin', pattern: /^#\/admin$/, mount: mountAdmin },
   ];
 
   var screens = document.getElementById('screens');
