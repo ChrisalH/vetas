@@ -1879,6 +1879,387 @@
   }
 
   /* ==========================================================
+     Pantalla: admin
+     Se entra con email y contraseña (Supabase Auth). Solo quien está en la
+     tabla admins puede ver las historias ocultas, ocultar/mostrar y borrar:
+     lo decide la base con sus reglas, esta pantalla solo lo usa.
+     ========================================================== */
+
+  var adminDb = null;
+
+  // Cliente aparte, con sesión. Se guarda en sessionStorage: se cierra al cerrar la pestaña.
+  function getAdminDb() {
+    if (!adminDb && CONFIG.supabaseUrl && CONFIG.supabaseKey && window.supabase) {
+      adminDb = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, {
+        auth: {
+          storageKey: 'vetas-admin-auth',
+          storage: window.sessionStorage,
+          persistSession: true,
+          autoRefreshToken: true,
+        },
+      });
+    }
+    return adminDb;
+  }
+
+  function formatDate(value) {
+    var date = new Date(value);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function mountAdmin(root) {
+    document.body.classList.add('is-admin');
+
+    var client = getAdminDb();
+    var alive = true;
+    var inner = h('div', { class: 'admin__inner' });
+    root.append(h('section', { class: 'screen admin' }, inner));
+
+    var adminStories = [];
+    var filter = 'all'; // all | visible | hidden
+    var openIds = {};
+
+    function show() {
+      if (!alive) return;
+      inner.replaceChildren.apply(inner, arguments);
+    }
+
+    function header(extra) {
+      return h(
+        'div',
+        { class: 'admin__header' },
+        h('a', { class: 'brand admin__brand', href: '#/' }, 'Vetas'),
+        extra || h('span'),
+      );
+    }
+
+    function errorLine(text) {
+      var line = h('p', { class: 'field__error', role: 'alert' });
+      line.textContent = text || '';
+      return line;
+    }
+
+    /* ---------- Entrar ---------- */
+
+    function showMessage(text) {
+      show(header(), h('h1', { class: 'admin__title' }, 'Administración'), h('p', { class: 'admin__text' }, text));
+    }
+
+    function showLogin(message) {
+      var email = field('admin-email', 'Email', { max: 200, placeholder: '' });
+      email.input.type = 'email';
+      email.input.setAttribute('autocomplete', 'username');
+      email.input.setAttribute('autocapitalize', 'none');
+      email.input.setAttribute('spellcheck', 'false');
+
+      var password = field('admin-password', 'Contraseña', { max: 200, placeholder: '' });
+      password.input.type = 'password';
+      password.input.setAttribute('autocomplete', 'current-password');
+
+      var error = errorLine(message);
+      var submit = h('button', { class: 'button', type: 'submit' }, 'Entrar');
+      var form = h('form', { class: 'admin__login', novalidate: '' }, email.element, password.element, error, submit);
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var emailValue = email.input.value.trim();
+        if (!emailValue || !password.input.value) {
+          error.textContent = 'Completá el email y la contraseña.';
+          return;
+        }
+        error.textContent = '';
+        submit.disabled = true;
+
+        withTimeout(client.auth.signInWithPassword({ email: emailValue, password: password.input.value }), 15000)
+          .then(function (result) {
+            if (!alive) return;
+            if (result.error) {
+              error.textContent = /invalid login/i.test(result.error.message || '')
+                ? 'Email o contraseña incorrectos.'
+                : 'No se pudo entrar. Probá de nuevo en un rato.';
+              submit.disabled = false;
+              return;
+            }
+            checkAdmin();
+          })
+          .catch(function () {
+            if (!alive) return;
+            error.textContent = 'No se pudo conectar. Revisá tu conexión y probá de nuevo.';
+            submit.disabled = false;
+          });
+      });
+
+      show(header(), h('h1', { class: 'admin__title' }, 'Administración'), form);
+      email.input.focus();
+    }
+
+    // Tener cuenta no alcanza: tiene que estar en la tabla admins.
+    function checkAdmin() {
+      show(header(), h('p', { class: 'admin__text' }, 'Verificando…'));
+      withTimeout(client.rpc('is_admin'), 12000)
+        .then(function (result) {
+          if (result.error) throw result.error;
+          if (result.data === true) {
+            loadAll();
+            return;
+          }
+          client.auth.signOut();
+          showLogin('Esta cuenta no tiene permisos de administración.');
+        })
+        .catch(function (error) {
+          console.warn('No se pudo verificar el acceso.', error);
+          showLogin('No se pudo verificar tu acceso. Probá de nuevo.');
+        });
+    }
+
+    function signOut() {
+      client.auth.signOut().then(function () {
+        adminStories = [];
+        showLogin();
+      });
+    }
+
+    /* ---------- Lista ---------- */
+
+    function loadAll() {
+      show(header(), h('p', { class: 'admin__text' }, 'Cargando historias…'));
+      var query = client
+        .from('stories')
+        .select('id, title, color, song, thought, hidden, created_at, stops (position, place, body)')
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      withTimeout(query, 15000)
+        .then(function (result) {
+          if (result.error) throw result.error;
+          adminStories = result.data;
+          showList();
+        })
+        .catch(function (error) {
+          console.warn('No se pudieron cargar las historias del admin.', error);
+          var retry = h('button', { class: 'button button--small', type: 'button', onClick: loadAll }, 'Reintentar');
+          show(header(), h('p', { class: 'admin__text' }, 'No se pudieron cargar las historias.'), retry);
+        });
+    }
+
+    var listElement = null;
+    var filtersElement = null;
+
+    function showList() {
+      var signOutButton = h(
+        'button',
+        { class: 'button button--ghost button--small', type: 'button', onClick: signOut },
+        'Salir',
+      );
+      filtersElement = h('div', { class: 'admin__filters', role: 'group', 'aria-label': 'Filtrar historias' });
+      listElement = h('ul', { class: 'admin__list' });
+      show(header(signOutButton), h('h1', { class: 'admin__title' }, 'Historias'), filtersElement, listElement);
+      renderList();
+    }
+
+    function countWhere(predicate) {
+      return adminStories.filter(predicate).length;
+    }
+
+    function renderFilters() {
+      var options = [
+        { key: 'all', label: 'Todas', count: adminStories.length },
+        {
+          key: 'visible',
+          label: 'Visibles',
+          count: countWhere(function (story) {
+            return !story.hidden;
+          }),
+        },
+        {
+          key: 'hidden',
+          label: 'Ocultas',
+          count: countWhere(function (story) {
+            return story.hidden;
+          }),
+        },
+      ];
+      filtersElement.replaceChildren.apply(
+        filtersElement,
+        options.map(function (option) {
+          return h(
+            'button',
+            {
+              class: 'chip',
+              type: 'button',
+              'aria-pressed': String(filter === option.key),
+              onClick: function () {
+                filter = option.key;
+                renderList();
+              },
+            },
+            option.label + ' (' + option.count + ')',
+          );
+        }),
+      );
+    }
+
+    function renderList() {
+      if (!alive || !listElement) return;
+      renderFilters();
+      var shown = adminStories.filter(function (story) {
+        return filter === 'all' || (filter === 'hidden') === story.hidden;
+      });
+      if (!shown.length) {
+        listElement.replaceChildren(h('li', { class: 'admin__text' }, 'No hay historias para mostrar.'));
+        return;
+      }
+      listElement.replaceChildren.apply(listElement, shown.map(renderCard));
+    }
+
+    function renderStops(story) {
+      var stops = (story.stops || []).slice().sort(function (a, b) {
+        return a.position - b.position;
+      });
+      var list = h('ol', { class: 'admin__stops' });
+      stops.forEach(function (stop) {
+        list.append(h('li', {}, h('strong', {}, stop.place), h('p', {}, stop.body)));
+      });
+      return list;
+    }
+
+    function renderCard(story) {
+      var card = h('li', { class: 'admin__story' + (story.hidden ? ' is-hidden' : '') });
+      card.style.setProperty('--story-color', lineColor(story.color));
+
+      var stopCount = (story.stops || []).length;
+      var meta = formatDate(story.created_at) + ' · ' + stopCount + (stopCount === 1 ? ' salida' : ' salidas');
+
+      var details = h('details', { class: 'admin__details' }, h('summary', {}, 'Ver historia'));
+      details.open = Boolean(openIds[story.id]);
+      details.addEventListener('toggle', function () {
+        openIds[story.id] = details.open;
+      });
+      details.append(h('p', {}, 'Canción: ' + story.song), h('p', {}, story.thought), renderStops(story));
+
+      var error = errorLine();
+      var actions = h('div', { class: 'admin__actions' });
+
+      function showActions() {
+        var toggle = h(
+          'button',
+          { class: 'button button--ghost button--small', type: 'button' },
+          story.hidden ? 'Mostrar' : 'Ocultar',
+        );
+        toggle.addEventListener('click', function () {
+          changeHidden(story, !story.hidden, toggle, error);
+        });
+        var remove = h('button', { class: 'button button--small button--danger', type: 'button' }, 'Borrar');
+        remove.addEventListener('click', showConfirm);
+        error.textContent = '';
+        actions.className = 'admin__actions';
+        actions.replaceChildren(toggle, remove);
+      }
+
+      function showConfirm() {
+        var confirm = h('button', { class: 'button button--small button--danger-solid', type: 'button' }, 'Sí, borrar');
+        confirm.addEventListener('click', function () {
+          removeStory(story, confirm, error);
+        });
+        var cancel = h('button', { class: 'button button--ghost button--small', type: 'button' }, 'Cancelar');
+        cancel.addEventListener('click', showActions);
+        actions.className = 'admin__confirm';
+        actions.replaceChildren(
+          h('p', {}, '¿Borrar esta historia para siempre? Se borran también sus salidas.'),
+          h('div', { class: 'admin__actions' }, confirm, cancel),
+        );
+      }
+
+      var title = h('span', { class: 'admin__story-title' }, story.title);
+      var status = h(
+        'span',
+        { class: 'status' + (story.hidden ? ' status--hidden' : '') },
+        story.hidden ? 'Oculta' : 'Visible',
+      );
+
+      card.append(
+        h(
+          'div',
+          { class: 'admin__story-head' },
+          h('span', { class: 'admin__swatch', 'aria-hidden': 'true' }),
+          h('div', { class: 'admin__story-text' }, title, h('span', {}, meta)),
+          status,
+        ),
+        details,
+        error,
+        actions,
+      );
+      showActions();
+      return card;
+    }
+
+    /* ---------- Cambios ---------- */
+
+    // Pide la fila de vuelta: si la base no dejó cambiarla, no vuelve nada.
+    function changeHidden(story, hidden, button, error) {
+      button.disabled = true;
+      error.textContent = '';
+      withTimeout(client.from('stories').update({ hidden: hidden }).eq('id', story.id).select('id'), 12000)
+        .then(function (result) {
+          if (result.error) throw result.error;
+          if (!result.data || !result.data.length) throw new Error('La base no aplicó el cambio.');
+          story.hidden = hidden;
+          renderList();
+        })
+        .catch(function (failure) {
+          console.warn('No se pudo cambiar la historia.', failure);
+          if (!alive) return;
+          error.textContent = 'No se pudo cambiar. Probá de nuevo.';
+          button.disabled = false;
+        });
+    }
+
+    function removeStory(story, button, error) {
+      button.disabled = true;
+      error.textContent = '';
+      withTimeout(client.from('stories').delete().eq('id', story.id).select('id'), 12000)
+        .then(function (result) {
+          if (result.error) throw result.error;
+          if (!result.data || !result.data.length) throw new Error('La base no borró la historia.');
+          adminStories = adminStories.filter(function (item) {
+            return item.id !== story.id;
+          });
+          renderList();
+        })
+        .catch(function (failure) {
+          console.warn('No se pudo borrar la historia.', failure);
+          if (!alive) return;
+          error.textContent = 'No se pudo borrar. Probá de nuevo.';
+          button.disabled = false;
+        });
+    }
+
+    /* ---------- Arranque ---------- */
+
+    if (!client) {
+      showMessage('No se pudo conectar con Supabase.');
+    } else {
+      show(header(), h('p', { class: 'admin__text' }, 'Cargando…'));
+      client.auth
+        .getSession()
+        .then(function (result) {
+          if (!alive) return;
+          if (result.data && result.data.session) checkAdmin();
+          else showLogin();
+        })
+        .catch(function () {
+          showLogin();
+        });
+    }
+
+    return function () {
+      alive = false;
+      document.body.classList.remove('is-admin');
+    };
+  }
+
+  /* ==========================================================
      Navegación
      ========================================================== */
 
@@ -1920,14 +2301,19 @@
     if (previousRoute === 'home' || previousRoute === 'story') navigate();
   }
 
-  MapView.init(document.getElementById('map'));
-  loadStories().then(afterLoad);
+  // La página /admin define window.VETAS_ADMIN: monta solo el admin, sin mapa ni rutas.
+  if (window.VETAS_ADMIN) {
+    mountAdmin(screens);
+  } else {
+    MapView.init(document.getElementById('map'));
+    loadStories().then(afterLoad);
 
-  var resizeTimer = null;
-  window.addEventListener('resize', function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(MapView.refocus, 200);
-  });
-  window.addEventListener('hashchange', navigate);
-  navigate();
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(MapView.refocus, 200);
+    });
+    window.addEventListener('hashchange', navigate);
+    navigate();
+  }
 })();
