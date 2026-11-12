@@ -473,6 +473,14 @@
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': MAP_COLORS.gold, 'line-opacity': 0.35, 'line-width': 1.5 },
       });
+      // Línea invisible y ancha, para que los caminos finos sean fáciles de tocar.
+      map.addLayer({
+        id: 'routes-hit',
+        type: 'line',
+        source: 'routes',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 24 },
+      });
       map.addLayer({
         id: 'focus-zones-fill',
         type: 'fill',
@@ -569,14 +577,14 @@
                 return story.stops.length > 1;
               })
               .map(function (story) {
-                return route(story.stops);
+                return route(story.stops, { id: story.id });
               }),
           ),
         );
         var zones = [];
         list.forEach(function (story) {
           story.stops.forEach(function (stop) {
-            zones.push(zone(stop.lng, stop.lat));
+            zones.push(zone(stop.lng, stop.lat, { id: story.id }));
           });
         });
         map.getSource('zones').setData(collection(zones));
@@ -585,7 +593,7 @@
 
     function applyStoriesVisibility() {
       if (!map || !map.getLayer('routes-line')) return;
-      ['zones-fill', 'zones-outline', 'routes-line'].forEach(function (id) {
+      ['zones-fill', 'zones-outline', 'routes-line', 'routes-hit'].forEach(function (id) {
         map.setLayoutProperty(id, 'visibility', storiesVisible ? 'visible' : 'none');
       });
     }
@@ -610,12 +618,12 @@
         stopGold();
         setRouteGradient(color, color, 0);
         map.getSource('focus-route').setData(
-          collection(shown.length > 1 ? [route(shown, { color: color })] : []),
+          collection(shown.length > 1 ? [route(shown, { color: color, id: story.id })] : []),
         );
         map.getSource('focus-zones').setData(
           collection(
             shown.map(function (stop) {
-              return zone(stop.lng, stop.lat, { color: color });
+              return zone(stop.lng, stop.lat, { color: color, id: story.id });
             }),
           ),
         );
@@ -685,7 +693,7 @@
           map.getSource('focus-zones').setData(
             collection(
               story.stops.map(function (stop) {
-                return zone(stop.lng, stop.lat, { color: MAP_COLORS.gold });
+                return zone(stop.lng, stop.lat, { color: MAP_COLORS.gold, id: story.id });
               }),
             ),
           );
@@ -822,6 +830,51 @@
       });
     }
 
+    /* ---------- Tocar un camino en el mapa ---------- */
+
+    var TAP_LAYERS = ['focus-route-line', 'focus-zones-fill', 'routes-hit', 'zones-fill'];
+
+    // Busca la historia que está bajo el dedo, con un margen para que sea fácil acertar.
+    function storyAt(point) {
+      if (!map || !map.getLayer('routes-hit')) return null;
+      var margin = 12;
+      var layers = TAP_LAYERS.filter(function (id) {
+        return map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none';
+      });
+      var features = map.queryRenderedFeatures(
+        [
+          [point.x - margin, point.y - margin],
+          [point.x + margin, point.y + margin],
+        ],
+        { layers: layers },
+      );
+      for (var i = 0; i < features.length; i++) {
+        if (features[i].properties && features[i].properties.id) return features[i].properties.id;
+      }
+      return null;
+    }
+
+    function onStoryTap(callback) {
+      if (!map) return function () {};
+
+      function handleClick(event) {
+        var id = storyAt(event.point);
+        if (id) callback(id);
+      }
+
+      function handleHover(event) {
+        map.getCanvas().style.cursor = storyAt(event.point) ? 'pointer' : '';
+      }
+
+      map.on('click', handleClick);
+      map.on('mousemove', handleHover);
+      return function () {
+        map.off('click', handleClick);
+        map.off('mousemove', handleHover);
+        map.getCanvas().style.cursor = '';
+      };
+    }
+
     // Indica si un punto de la pantalla cae sobre el río.
     function isWater(x, y) {
       if (!map || !map.isStyleLoaded() || !map.getLayer('water')) return false;
@@ -855,6 +908,7 @@
       setDraft: setDraft,
       setDraftLine: setDraftLine,
       clearDraft: clearDraft,
+      onStoryTap: onStoryTap,
       isWater: isWater,
       refocus: refocus,
     };
@@ -1136,7 +1190,7 @@
       'article',
       { class: 'story-card' },
       link,
-      h('p', { class: 'story-card__hint' }, 'Deslizá para ver otra'),
+      h('p', { class: 'story-card__hint' }, 'Deslizá o tocá un camino'),
       h(
         'div',
         { class: 'story-card__arrows' },
@@ -1217,8 +1271,29 @@
       }
     });
 
+    // Tocar un camino en el mapa: la primera vez lo elige, la segunda lo abre.
+    var stopTap = MapView.onStoryTap(function (id) {
+      var current = stories[currentIndex];
+      if (current && current.id === id) {
+        location.hash = '#/historia/' + encodeURIComponent(id);
+        return;
+      }
+      var index = stories.findIndex(function (story) {
+        return story.id === id;
+      });
+      if (index === -1) return;
+      var previous = current ? current.color : null;
+      currentIndex = index;
+      stories[currentIndex].color = randomColor(previous);
+      show(true);
+    });
+
     root.append(screen);
     show(false);
+
+    return function () {
+      stopTap();
+    };
   }
 
   /* ==========================================================
