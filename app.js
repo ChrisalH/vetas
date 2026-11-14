@@ -329,6 +329,57 @@
     return element;
   }
 
+  /* ==========================================================
+     Canción: busca el tema en Deezer y devuelve un adelanto de 30 s.
+     La API no manda CORS, así que se pide por JSONP. El link del
+     adelanto vence en minutos: se busca al momento de usarlo.
+     ========================================================== */
+
+  var previewSearches = {};
+  var previewCallbackId = 0;
+
+  function findPreview(song) {
+    var query = String(song || '').trim();
+    if (!query) return Promise.resolve(null);
+    if (previewSearches[query]) return previewSearches[query];
+
+    var search = new Promise(function (resolve) {
+      var name = '__vetasPreview' + ++previewCallbackId;
+      var script = document.createElement('script');
+      var timer;
+
+      function done(result) {
+        clearTimeout(timer);
+        delete window[name];
+        script.remove();
+        resolve(result);
+      }
+
+      window[name] = function (response) {
+        var track = response && response.data && response.data[0];
+        if (!track || !track.preview) return done(null);
+        done({
+          url: track.preview,
+          title: track.title_short || track.title,
+          artist: track.artist && track.artist.name,
+          cover: track.album && track.album.cover_small,
+        });
+      };
+      script.onerror = function () { done(null); };
+      timer = setTimeout(function () { done(null); }, 6000);
+      script.src =
+        'https://api.deezer.com/search?limit=1&output=jsonp&callback=' + name + '&q=' + encodeURIComponent(query);
+      document.head.append(script);
+    });
+
+    // Un fallo no se guarda, para poder reintentar; un acierto vence a los minutos.
+    previewSearches[query] = search;
+    search.then(function () {
+      setTimeout(function () { delete previewSearches[query]; }, 5 * 60 * 1000);
+    });
+    return search;
+  }
+
   function vaseIcon() {
     var template = document.createElement('template');
     template.innerHTML =
@@ -1381,6 +1432,88 @@
       ];
     }
 
+    // Un solo audio por historia: suena mientras se lee y se repite al terminar.
+    // Los botones (barra de abajo y pantalla final) comparten el mismo estado.
+    var audio = null;
+    var track = null;
+    var controls = [];
+
+    function syncControls() {
+      var playing = !!audio && !audio.paused;
+      controls.forEach(function (control) {
+        control.button.textContent = playing ? '❚❚' : '▶';
+        control.button.setAttribute('aria-label', playing ? 'Pausar canción' : 'Escuchar canción');
+      });
+    }
+
+    function togglePlayback() {
+      if (!audio) return;
+      if (audio.paused) audio.play().catch(function () {});
+      else audio.pause();
+    }
+
+    function stopPreview() {
+      if (!audio) return;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      audio = null;
+    }
+
+    // El link de Deezer vence: si falla, se pide uno nuevo y se sigue donde estaba.
+    function recoverAudio(player) {
+      var wasPlaying = !player.paused;
+      delete previewSearches[String(story.song || '').trim()];
+      findPreview(story.song).then(function (found) {
+        if (!found || audio !== player) return;
+        player.src = found.url;
+        if (wasPlaying) player.play().catch(function () {});
+      });
+    }
+
+    function loadTrack() {
+      findPreview(story.song).then(function (found) {
+        if (!found || !screen.isConnected) return;
+        track = found;
+        audio = new Audio(found.url);
+        audio.loop = true;
+        audio.preload = 'auto';
+        var player = audio;
+        ['play', 'pause'].forEach(function (name) { player.addEventListener(name, syncControls); });
+        var retried = false;
+        player.addEventListener('error', function () {
+          if (retried) return;
+          retried = true;
+          recoverAudio(player);
+        });
+        controls.forEach(function (control) { control.reveal(); });
+      });
+    }
+
+    // Aparece solo si Deezer encontró el tema.
+    function previewPlayer(className) {
+      var holder = h('div', { class: className });
+      var button = h('button', { class: 'preview__button', type: 'button', 'aria-label': 'Escuchar canción', onClick: togglePlayback }, '▶');
+      controls = controls.filter(function (item) { return item.holder.isConnected; });
+      var control = {
+        holder: holder,
+        button: button,
+        reveal: function () {
+          if (!track || holder.classList.contains('is-ready')) return;
+          holder.append(button, h('span', { class: 'preview__label' }, track.artist ? track.title + ' · ' + track.artist : track.title));
+          holder.classList.add('is-ready');
+          syncControls();
+        },
+      };
+      controls.push(control);
+      control.reveal();
+      return holder;
+    }
+
+    var miniPlayer = previewPlayer('preview preview--bar');
+    body.after(miniPlayer);
+    loadTrack();
+
     function closingScreen() {
       return [
         h('h1', { class: 'sheet__title' }, 'Lo que me llevo'),
@@ -1389,6 +1522,7 @@
           { class: 'keepsake' },
           h('span', { class: 'note' }, 'Una canción'),
           h('span', { class: 'keepsake__song' }, story.song),
+          previewPlayer('preview'),
         ),
         h(
           'div',
@@ -1410,6 +1544,7 @@
         bar.classList.toggle('is-done', index <= step);
       });
 
+      miniPlayer.classList.toggle('is-hidden', closing);
       body.replaceChildren.apply(
         body,
         closing ? closingScreen() : outingScreen(story.stops[step], step),
@@ -1460,10 +1595,14 @@
     // Si la persona estaba desplazando el texto, no cuenta como toque.
     var touchStart = null;
     body.addEventListener('pointerdown', function (event) {
+      if (event.target.closest('.preview')) return;
       touchStart = { x: event.clientX, y: event.clientY, scroll: body.scrollTop };
     });
     body.addEventListener('pointerup', function (event) {
-      if (!touchStart) return;
+      if (!touchStart || event.target.closest('.preview')) {
+        touchStart = null;
+        return;
+      }
       var moved =
         Math.abs(event.clientX - touchStart.x) > 10 ||
         Math.abs(event.clientY - touchStart.y) > 10 ||
@@ -1486,6 +1625,7 @@
 
     return function () {
       document.removeEventListener('keydown', onKey);
+      stopPreview();
       MapView.setStoriesVisible(true);
     };
   }
