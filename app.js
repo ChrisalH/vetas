@@ -338,6 +338,41 @@
   var previewSearches = {};
   var previewCallbackId = 0;
 
+  // Minúsculas, sin tildes ni signos: "Ya No Estás, Las Pelotas" -> "yanoestaslaspelotas".
+  function normalizeText(text) {
+    return String(text || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  // Deezer devuelve resultados distintos según la región y a veces trae covers o
+  // versiones de otros artistas. Se queda solo con los temas cuyo título y artista
+  // aparecen en lo que escribió la persona, y entre esos toma el primero.
+  function pickTrack(tracks, song) {
+    var wanted = normalizeText(song);
+    // Las versiones en vivo o acústicas cuentan como originales: a veces son las únicas buenas.
+    var unwanted = /karaoke|cover|tribute|tributo|instrumental|remix/;
+
+    var matches = (tracks || []).filter(function (track) {
+      if (!track || !track.preview || !track.artist) return false;
+      var title = normalizeText(track.title_short || track.title);
+      var artist = normalizeText(track.artist.name);
+      return title && artist && wanted.indexOf(title) !== -1 && wanted.indexOf(artist) !== -1;
+    });
+
+    function isAlternate(track) {
+      return unwanted.test(normalizeText(track.title)) && !unwanted.test(wanted);
+    }
+
+    // Se respeta el orden de relevancia de Deezer; solo se baja lo que no es del artista.
+    matches.sort(function (a, b) {
+      return isAlternate(a) - isAlternate(b);
+    });
+    return matches[0] || null;
+  }
+
   function findPreview(song) {
     var query = String(song || '').trim();
     if (!query) return Promise.resolve(null);
@@ -356,8 +391,8 @@
       }
 
       window[name] = function (response) {
-        var track = response && response.data && response.data[0];
-        if (!track || !track.preview) return done(null);
+        var track = pickTrack(response && response.data, query);
+        if (!track) return done(null);
         done({
           url: track.preview,
           title: track.title_short || track.title,
@@ -368,14 +403,16 @@
       script.onerror = function () { done(null); };
       timer = setTimeout(function () { done(null); }, 6000);
       script.src =
-        'https://api.deezer.com/search?limit=1&output=jsonp&callback=' + name + '&q=' + encodeURIComponent(query);
+        'https://api.deezer.com/search?limit=25&output=jsonp&callback=' + name +
+        '&q=' + encodeURIComponent(query.replace(/[,;]/g, ' '));
       document.head.append(script);
     });
 
     // Un fallo no se guarda, para poder reintentar; un acierto vence a los minutos.
     previewSearches[query] = search;
-    search.then(function () {
-      setTimeout(function () { delete previewSearches[query]; }, 5 * 60 * 1000);
+    search.then(function (found) {
+      if (!found) delete previewSearches[query];
+      else setTimeout(function () { delete previewSearches[query]; }, 5 * 60 * 1000);
     });
     return search;
   }
