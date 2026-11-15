@@ -182,23 +182,34 @@
     return copy;
   }
 
+  function byPosition(a, b) {
+    return a.position - b.position;
+  }
+
+  // Sirve para las dos consultas: la del mapa trae "route" (solo coordenadas) y
+  // "first" (el texto de la primera salida); la de lectura trae "stops" completas.
   function fromRow(row) {
-    var stops = (row.stops || [])
+    var full = Array.isArray(row.stops);
+    var stops = (full ? row.stops : row.route || [])
       .slice()
-      .sort(function (a, b) {
-        return a.position - b.position;
-      })
+      .sort(byPosition)
       .map(function (stop) {
-        return { place: stop.place, text: stop.body, lat: stop.lat, lng: stop.lng };
+        return full
+          ? { place: stop.place, text: stop.body, lat: stop.lat, lng: stop.lng }
+          : { lat: stop.lat, lng: stop.lng };
       });
+    var firstText = full
+      ? stops[0] && stops[0].text
+      : row.first && row.first[0] && row.first[0].body;
     return {
       id: row.id,
       title: row.title,
-      summary: stops.length ? summarize(stops[0].text) : '',
+      summary: summarize(firstText || ''),
       song: row.song,
       thought: row.thought,
       color: PALETTE.some(function (c) { return c.base === row.color; }) ? row.color : randomColor(),
       stops: stops,
+      loaded: full, // false: falta pedir el texto antes de leerla
     };
   }
 
@@ -214,20 +225,24 @@
   }
 
   // Trae las últimas historias visibles y las mezcla, para que cada visita sea distinta.
+  // Solo lo que hace falta para el mapa y la tarjeta: el texto se pide al abrir cada una.
   function loadStories() {
     storiesStatus = 'loading';
+    storyRequests = {};
 
     if (!db) {
       stories = SAMPLE_STORIES.map(function (story) {
-        return Object.assign({}, story, { color: randomColor() });
+        return Object.assign({}, story, { color: randomColor(), loaded: true });
       });
       storiesStatus = 'ready';
       return Promise.resolve();
     }
 
+    // "first" es la misma tabla de salidas, filtrada a la primera, para el resumen.
     var query = db
       .from('stories')
-      .select('id, title, color, song, thought, created_at, stops (position, place, body, lat, lng)')
+      .select('id, title, color, route:stops (position, lat, lng), first:stops (body)')
+      .eq('first.position', 0)
       .eq('hidden', false) // con la sesión de admin abierta, igual se muestran solo las visibles
       .order('created_at', { ascending: false })
       .limit(CONFIG.maxStories);
@@ -261,6 +276,7 @@
       stops: draftStory.stops.map(function (stop) {
         return { place: stop.place, text: stop.text, lng: stop.lng, lat: stop.lat };
       }),
+      loaded: true,
     };
 
     if (!db) return Promise.resolve(story);
@@ -286,6 +302,52 @@
         return story.id === id;
       }) || null
     );
+  }
+
+  // Historia completa por id. Sirve también para links a historias que no
+  // vinieron en la tanda del mapa. Resuelve null si no existe o está oculta.
+  var storyRequests = {};
+  var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function fetchStory(id) {
+    if (!db || !UUID.test(id)) return Promise.resolve(null);
+    if (!storyRequests[id]) {
+      var query = db
+        .from('stories')
+        .select('id, title, color, song, thought, stops (position, place, body, lat, lng)')
+        .eq('id', id)
+        .eq('hidden', false)
+        .maybeSingle();
+      var request = withTimeout(query, 12000).then(function (result) {
+        if (result.error) throw result.error;
+        var row = result.data;
+        return row && row.stops && row.stops.length ? fromRow(row) : null;
+      });
+      // Un fallo no se guarda, para poder reintentar.
+      request.catch(function () {
+        if (storyRequests[id] === request) delete storyRequests[id];
+      });
+      storyRequests[id] = request;
+    }
+    return storyRequests[id];
+  }
+
+  // Si la historia está en el mapa, se completa ese mismo objeto, así conserva su color.
+  function getFullStory(id) {
+    var listed = findStory(id);
+    if (listed && listed.loaded) return Promise.resolve(listed);
+    return fetchStory(id).then(function (full) {
+      if (!full) return null;
+      var target = findStory(id);
+      if (!target) return full;
+      if (!target.loaded) {
+        target.song = full.song;
+        target.thought = full.thought;
+        target.stops = full.stops;
+        target.loaded = true;
+      }
+      return target;
+    });
   }
 
   /* ==========================================================
@@ -1404,29 +1466,61 @@
   }
 
   /* ==========================================================
-     Pantalla: historia (el paso entre salidas llega en la etapa 4)
+     Pantalla: historia
      ========================================================== */
 
+  // Pide el texto de la historia si todavía no lo tiene y después la muestra.
   function mountStory(root, params, from) {
-    // Si alguien entra con el link directo, espera a que carguen las historias.
-    if (storiesStatus === 'loading') {
-      MapView.setInteractive(false);
-      root.append(
-        h('section', { class: 'screen' }, h('div', { class: 'sheet sheet--compose sheet--short' }, h('p', { class: 'note' }, 'Cargando la historia…'))),
-      );
-      return null;
-    }
-
-    var story = findStory(params.id);
-
-    if (!story) {
-      location.hash = '#/mapa';
-      return null;
-    }
-
     MapView.setInteractive(false);
     MapView.setStoriesVisible(false);
 
+    var listed = findStory(params.id);
+    if (listed && listed.loaded) return showStory(root, listed, from);
+
+    var alive = true;
+    var cleanupStory = null;
+    var sheet = h('div', { class: 'sheet sheet--compose sheet--short' }, h('p', { class: 'note' }, 'Cargando la historia…'));
+    var holder = h('section', { class: 'screen' }, sheet);
+    root.append(holder);
+
+    // Si viene del mapa, el camino ya se puede mostrar mientras llega el texto.
+    if (listed) {
+      holder.style.setProperty('--story-color', listed.color);
+      MapView.focusStory(listed, { upTo: 1, padding: sheetPadding(70, 40, root) });
+    }
+
+    getFullStory(params.id)
+      .then(function (story) {
+        if (!alive) return;
+        if (!story) {
+          location.hash = '#/mapa';
+          return;
+        }
+        holder.remove();
+        cleanupStory = showStory(root, story, from);
+      })
+      .catch(function (problem) {
+        if (!alive) return;
+        console.warn('No se pudo cargar la historia.', problem);
+        sheet.replaceChildren(
+          h('p', { class: 'sheet__lead' }, 'No pudimos cargar la historia. Revisá tu conexión y probá de nuevo.'),
+          h(
+            'div',
+            { class: 'actions' },
+            h('a', { class: 'button button--ghost', href: '#/mapa' }, 'Volver al mapa'),
+            h('button', { class: 'button', type: 'button', onClick: navigate }, 'Reintentar'),
+          ),
+        );
+      });
+
+    return function () {
+      alive = false;
+      if (cleanupStory) cleanupStory();
+      else MapView.setStoriesVisible(true);
+    };
+  }
+
+  function showStory(root, story, from) {
     // Una pantalla por salida y una última para lo que se lleva.
     var total = story.stops.length + 1;
     var step = 0;
@@ -2432,10 +2526,11 @@
     previousRoute = target.name;
   }
 
-  // Cuando llegan las historias, se redibuja la pantalla actual si las necesita.
+  // Cuando llegan las historias, se redibuja el inicio si está abierto.
+  // La historia no se redibuja: pide su propio contenido y no depende de la lista.
   function afterLoad() {
     MapView.showStories(stories);
-    if (previousRoute === 'home' || previousRoute === 'story') navigate();
+    if (previousRoute === 'home') navigate();
   }
 
   MapView.init(document.getElementById('map'));
