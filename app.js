@@ -409,13 +409,14 @@
       .replace(/[^a-z0-9]/g, '');
   }
 
+  // Las versiones en vivo o acústicas cuentan como originales: a veces son las únicas buenas.
+  var UNWANTED = /karaoke|cover|tribute|tributo|instrumental|remix/;
+
   // Deezer devuelve resultados distintos según la región y a veces trae covers o
   // versiones de otros artistas. Se queda solo con los temas cuyo título y artista
   // aparecen en lo que escribió la persona, y entre esos toma el primero.
   function pickTrack(tracks, song) {
     var wanted = normalizeText(song);
-    // Las versiones en vivo o acústicas cuentan como originales: a veces son las únicas buenas.
-    var unwanted = /karaoke|cover|tribute|tributo|instrumental|remix/;
 
     var matches = (tracks || []).filter(function (track) {
       if (!track || !track.preview || !track.artist) return false;
@@ -425,7 +426,7 @@
     });
 
     function isAlternate(track) {
-      return unwanted.test(normalizeText(track.title)) && !unwanted.test(wanted);
+      return UNWANTED.test(normalizeText(track.title)) && !UNWANTED.test(wanted);
     }
 
     // Se respeta el orden de relevancia de Deezer; solo se baja lo que no es del artista.
@@ -440,8 +441,24 @@
     if (!query) return Promise.resolve(null);
     if (previewSearches[query]) return previewSearches[query];
 
-    var search = new Promise(function (resolve) {
-      var name = '__vetasPreview' + ++previewCallbackId;
+    var search = deezerSearch(query, 25).then(function (tracks) {
+      var track = pickTrack(tracks, query);
+      return track ? toPreview(track) : null;
+    });
+
+    // Un fallo no se guarda, para poder reintentar; un acierto vence a los minutos.
+    previewSearches[query] = search;
+    search.then(function (found) {
+      if (!found) delete previewSearches[query];
+      else setTimeout(function () { delete previewSearches[query]; }, 5 * 60 * 1000);
+    });
+    return search;
+  }
+
+  // Una búsqueda en Deezer. Resuelve la lista de temas, o null si no respondió.
+  function deezerSearch(query, limit) {
+    return new Promise(function (resolve) {
+      var name = '__vetasDeezer' + ++previewCallbackId;
       var script = document.createElement('script');
       var timer;
 
@@ -453,30 +470,56 @@
       }
 
       window[name] = function (response) {
-        var track = pickTrack(response && response.data, query);
-        if (!track) return done(null);
-        done({
-          url: track.preview,
-          title: track.title_short || track.title,
-          artist: track.artist && track.artist.name,
-          cover: track.album && track.album.cover_small,
-        });
+        done(response && Array.isArray(response.data) ? response.data : []);
       };
       script.onerror = function () { done(null); };
       timer = setTimeout(function () { done(null); }, 6000);
       script.src =
-        'https://api.deezer.com/search?limit=25&output=jsonp&callback=' + name +
+        'https://api.deezer.com/search?limit=' + limit + '&output=jsonp&callback=' + name +
         '&q=' + encodeURIComponent(query.replace(/[,;]/g, ' '));
       document.head.append(script);
     });
+  }
 
-    // Un fallo no se guarda, para poder reintentar; un acierto vence a los minutos.
-    previewSearches[query] = search;
-    search.then(function (found) {
-      if (!found) delete previewSearches[query];
-      else setTimeout(function () { delete previewSearches[query]; }, 5 * 60 * 1000);
+  function toPreview(track) {
+    return {
+      url: track.preview,
+      title: track.title_short || track.title,
+      artist: track.artist && track.artist.name,
+      cover: track.album && track.album.cover_small,
+    };
+  }
+
+  // Sugerencias para el campo de canción: temas con adelanto, sin repetidos
+  // y sin karaokes ni covers (salvo que la persona los esté buscando).
+  var suggestionSearches = {};
+
+  function suggestSongs(text) {
+    var key = normalizeText(text);
+    if (suggestionSearches[key]) return suggestionSearches[key];
+
+    var lookingForAlternate = UNWANTED.test(key);
+    var request = deezerSearch(text, 15).then(function (tracks) {
+      if (!tracks) return null;
+      var seen = {};
+      return tracks
+        .filter(function (track) {
+          if (!track || !track.preview || !track.artist || !track.title) return false;
+          if (!lookingForAlternate && UNWANTED.test(normalizeText(track.title))) return false;
+          var id = normalizeText(track.title_short || track.title) + '|' + normalizeText(track.artist.name);
+          if (seen[id]) return false;
+          seen[id] = true;
+          return true;
+        })
+        .slice(0, 5)
+        .map(toPreview);
     });
-    return search;
+
+    suggestionSearches[key] = request;
+    request.then(function (found) {
+      if (!found) delete suggestionSearches[key];
+    });
+    return request;
   }
 
   function vaseIcon() {
@@ -1778,7 +1821,8 @@
   var draft = null;
 
   function newDraft() {
-    return { title: '', color: randomColor(), stops: [], song: '', thought: '' };
+    // songChoice: el tema elegido de las sugerencias, para mostrar que se va a poder escuchar.
+    return { title: '', color: randomColor(), stops: [], song: '', songChoice: null, thought: '' };
   }
 
   function draftHasContent() {
@@ -1813,6 +1857,235 @@
     };
   }
 
+  // Campo de canción con sugerencias de Deezer mientras se escribe.
+  // Elegir una deja el texto como "Título, Artista", que es lo que después
+  // reconoce findPreview para el adelanto. También se puede escribir libre.
+  function songPicker(value) {
+    var song = field('compose-song', 'Una canción', {
+      max: LIMITS.song,
+      placeholder: 'Persiana americana, Soda Stereo',
+      value: value,
+    });
+    var input = song.input;
+    var listId = 'compose-song-list';
+
+    var list = h('ul', { id: listId, class: 'suggest', role: 'listbox', 'aria-label': 'Canciones sugeridas' });
+    list.hidden = true;
+    var status = h('p', { class: 'suggest__status', 'aria-live': 'polite' });
+    var playButton = h(
+      'button',
+      { class: 'preview__button', type: 'button', 'aria-label': 'Escuchar el adelanto', onClick: togglePlay },
+      '▶',
+    );
+    var chosen = h(
+      'div',
+      { class: 'preview suggest__chosen' },
+      playButton,
+      h('span', { class: 'preview__label' }, 'Se va a poder escuchar en tu historia.'),
+    );
+
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-controls', listId);
+    song.element.append(list, status, chosen);
+
+    var options = [];
+    var active = -1;
+    var timer = null;
+    var searchId = 0;
+    var selected = null;
+    var player = null;
+
+    function setStatus(text) {
+      status.textContent = text;
+    }
+
+    function close() {
+      list.hidden = true;
+      list.replaceChildren();
+      options = [];
+      active = -1;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+
+    function highlight(index) {
+      active = index;
+      Array.prototype.forEach.call(list.children, function (item, i) {
+        item.setAttribute('aria-selected', String(i === active));
+      });
+      if (active >= 0) {
+        input.setAttribute('aria-activedescendant', listId + '-' + active);
+        list.children[active].scrollIntoView({ block: 'nearest' });
+      } else {
+        input.removeAttribute('aria-activedescendant');
+      }
+    }
+
+    function open(found) {
+      options = found;
+      list.replaceChildren.apply(
+        list,
+        found.map(function (track, index) {
+          var cover = track.cover
+            ? h('img', { class: 'suggest__cover', src: track.cover, alt: '', width: '40', height: '40', loading: 'lazy' })
+            : h('span', { class: 'suggest__cover', 'aria-hidden': 'true' });
+          var item = h(
+            'li',
+            { id: listId + '-' + index, class: 'suggest__option', role: 'option', 'aria-selected': 'false' },
+            cover,
+            h(
+              'span',
+              { class: 'suggest__text' },
+              h('span', { class: 'suggest__title' }, track.title),
+              h('span', { class: 'suggest__artist' }, track.artist || ''),
+            ),
+          );
+          // Sin esto, tocar la opción le saca el foco al campo y la lista se cierra antes del clic.
+          item.addEventListener('mousedown', function (event) {
+            event.preventDefault();
+          });
+          item.addEventListener('click', function () {
+            choose(track);
+          });
+          return item;
+        }),
+      );
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+      highlight(-1);
+    }
+
+    function syncPlay() {
+      var playing = !!player && !player.paused;
+      playButton.textContent = playing ? '❚❚' : '▶';
+      playButton.setAttribute('aria-label', playing ? 'Pausar el adelanto' : 'Escuchar el adelanto');
+    }
+
+    function stopAudio() {
+      if (player) {
+        player.pause();
+        player.removeAttribute('src');
+        player.load();
+        player = null;
+      }
+      syncPlay();
+    }
+
+    function togglePlay() {
+      if (!selected) return;
+      if (!player) {
+        player = new Audio(selected.url);
+        ['play', 'pause', 'ended'].forEach(function (name) {
+          player.addEventListener(name, syncPlay);
+        });
+        // El link del adelanto vence a los minutos: si ya no anda, se saca el botón.
+        player.addEventListener('error', function () {
+          playButton.hidden = true;
+        });
+      }
+      if (player.paused) player.play().catch(function () {});
+      else player.pause();
+    }
+
+    function showChosen(choice) {
+      selected = choice;
+      draft.songChoice = choice;
+      playButton.hidden = false;
+      chosen.classList.add('is-ready');
+    }
+
+    function clearChoice() {
+      if (!selected) return;
+      selected = null;
+      draft.songChoice = null;
+      chosen.classList.remove('is-ready');
+      stopAudio();
+    }
+
+    function choose(track) {
+      var text = (track.artist ? track.title + ', ' + track.artist : track.title).slice(0, LIMITS.song);
+      close();
+      setStatus('');
+      stopAudio();
+      input.value = text;
+      showChosen({ text: text, url: track.url });
+      // Avisa al formulario que cambió el valor (guarda el borrador y limpia el error).
+      input.dispatchEvent(new Event('input'));
+    }
+
+    function search(text) {
+      var id = ++searchId;
+      setStatus('Buscando…');
+      suggestSongs(text).then(function (found) {
+        if (id !== searchId || !input.isConnected) return;
+        if (found === null) {
+          close();
+          setStatus('No se pudo buscar la canción. Podés escribirla igual.');
+        } else if (found.length === 0) {
+          close();
+          setStatus('No la encontramos. Podés dejarla escrita así.');
+        } else {
+          setStatus('');
+          open(found);
+        }
+      });
+    }
+
+    input.addEventListener('input', function () {
+      if (selected && input.value === selected.text) return;
+      clearChoice();
+      clearTimeout(timer);
+      searchId++;
+      var text = input.value.trim();
+      if (text.length < 2) {
+        close();
+        setStatus('');
+        return;
+      }
+      timer = setTimeout(function () {
+        search(text);
+      }, 300);
+    });
+
+    input.addEventListener('keydown', function (event) {
+      var count = options.length;
+      if (event.key === 'ArrowDown' && count) {
+        event.preventDefault();
+        highlight((active + 1) % count);
+      } else if (event.key === 'ArrowUp' && count) {
+        event.preventDefault();
+        highlight(active <= 0 ? count - 1 : active - 1);
+      } else if (event.key === 'Enter' && active >= 0) {
+        event.preventDefault();
+        choose(options[active]);
+      } else if (event.key === 'Escape' && !list.hidden) {
+        event.preventDefault();
+        close();
+      }
+    });
+
+    input.addEventListener('blur', function () {
+      close();
+      if (!selected && input.value.trim().length >= 2 && !status.textContent) {
+        setStatus('Si no la elegís de la lista, puede que no se pueda escuchar.');
+      }
+    });
+
+    if (draft.songChoice && draft.songChoice.text === input.value) showChosen(draft.songChoice);
+
+    return {
+      input: input,
+      element: song.element,
+      stop: function () {
+        clearTimeout(timer);
+        searchId++;
+        stopAudio();
+      },
+    };
+  }
+
   function mountCompose(root) {
     if (!draft) draft = newDraft();
 
@@ -1824,7 +2097,7 @@
     screen.style.setProperty('--story-color', draft.color);
     root.append(screen);
 
-    var stopMoveListener = function () {};
+    var stopStep = function () {};
     var step = draft.stops.length ? 'write' : 'title';
     var editing = draft.stops.length - 1;
 
@@ -1874,8 +2147,8 @@
     }
 
     function show(nextStep) {
-      stopMoveListener();
-      stopMoveListener = function () {};
+      stopStep();
+      stopStep = function () {};
       MapView.setDraftLine(null);
       step = nextStep;
       screen.replaceChildren();
@@ -1941,7 +2214,7 @@
         marker.style.height = diameter + 'px';
         MapView.setDraftLine(last);
       }
-      stopMoveListener = MapView.onMove(sizeMarker);
+      stopStep = MapView.onMove(sizeMarker);
 
       var sheet = h(
         'div',
@@ -2062,11 +2335,8 @@
 
     function showClosing() {
       MapView.setInteractive(false);
-      var song = field('compose-song', 'Una canción', {
-        max: LIMITS.song,
-        placeholder: 'Persiana americana, Soda Stereo',
-        value: draft.song,
-      });
+      var song = songPicker(draft.song);
+      stopStep = song.stop;
       var thought = field('compose-thought', 'Un pensamiento', {
         max: LIMITS.thought,
         placeholder: 'No hizo falta ponerle nombre',
@@ -2161,7 +2431,7 @@
     show(step);
 
     return function () {
-      stopMoveListener();
+      stopStep();
       MapView.setDraftLine(null);
       MapView.clearDraft();
       MapView.setStoriesVisible(true);
