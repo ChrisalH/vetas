@@ -43,12 +43,18 @@
     return options[Math.floor(Math.random() * options.length)].base;
   }
 
+  // Colores de los caminos de fondo en el mapa: más variados que los de las tarjetas.
+  var MAP_LINE_COLORS = [
+    '#e0707a', '#e58a55', '#d9a066', '#8fbf6a', '#5fb58a', '#4fb3b0',
+    '#5aa9e0', '#6a8abd', '#8a82d6', '#a97bc4', '#c46ea5', '#e0708f',
+  ];
+
   // Color fijo de cada historia en el mapa (no cambia al pasar de una a otra).
   function mapColor(story) {
     var text = String(story.id || story.title || '');
     var hash = 0;
     for (var i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-    return PALETTE[hash % PALETTE.length].line;
+    return MAP_LINE_COLORS[hash % MAP_LINE_COLORS.length];
   }
 
   function lineColor(base) {
@@ -652,6 +658,14 @@
             else if (id.indexOf('railway') !== -1) opacity = 0.1;
             setPaint(id, 'line-color', MAP_COLORS.cream);
             setPaint(id, 'line-opacity', opacity);
+            // Calles finas: que los caminos de las historias sean lo más ancho del mapa.
+            var big = id.indexOf('motorway') !== -1 || id.indexOf('major') !== -1;
+            setPaint(id, 'line-width', [
+              'interpolate', ['linear'], ['zoom'],
+              10, big ? 0.5 : 0.3,
+              14, big ? 1.2 : 0.7,
+              17, big ? 2.4 : 1.4,
+            ]);
           }
         } else if (type === 'symbol') {
           if (id.indexOf('shield') !== -1 || id === 'airport') {
@@ -684,14 +698,18 @@
         id: 'zones-outline',
         type: 'line',
         source: 'zones',
-        paint: { 'line-color': ['get', 'color'], 'line-opacity': 0.5, 'line-width': 1 },
+        paint: { 'line-color': ['get', 'color'], 'line-opacity': 0.6, 'line-width': 1.5 },
       });
       map.addLayer({
         id: 'routes-line',
         type: 'line',
         source: 'routes',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': ['get', 'color'], 'line-opacity': 0.6, 'line-width': 1.6 },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-opacity': 0.85,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 4, 17, 6],
+        },
       });
       // Línea invisible y ancha, para que los caminos finos sean fáciles de tocar.
       map.addLayer({
@@ -707,7 +725,7 @@
         type: 'line',
         source: 'focus-route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': 14, 'line-blur': 9, 'line-opacity': 0.45 },
+        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 12, 14, 18, 17, 24], 'line-blur': 10, 'line-opacity': 0.5 },
       });
       map.addLayer({
         id: 'focus-zones-glow',
@@ -732,7 +750,7 @@
         type: 'line',
         source: 'focus-route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': 4 },
+        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 14, 6.5, 17, 9] },
       });
 
       // Borrador de la historia que se está contando.
