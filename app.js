@@ -24,6 +24,14 @@
     { base: '#23382f', line: '#64977e' },
     { base: '#24324a', line: '#6a8abd' },
     { base: '#3d2640', line: '#9c6ea5' },
+    { base: '#60303d', line: '#e0708f' },
+    { base: '#623b25', line: '#e58a55' },
+    { base: '#3d522e', line: '#8fbf6a' },
+    { base: '#224d4c', line: '#4fb3b0' },
+    { base: '#274960', line: '#5aa9e0' },
+    { base: '#3b385c', line: '#8a82d6' },
+    { base: '#542f47', line: '#c46ea5' },
+    { base: '#374e56', line: '#7fb5c9' },
   ];
 
   var MAP_COLORS = {
@@ -43,18 +51,24 @@
     return options[Math.floor(Math.random() * options.length)].base;
   }
 
-  // Colores de los caminos de fondo en el mapa: más variados que los de las tarjetas.
-  var MAP_LINE_COLORS = [
-    '#e0707a', '#e58a55', '#d9a066', '#8fbf6a', '#5fb58a', '#4fb3b0',
-    '#5aa9e0', '#6a8abd', '#8a82d6', '#a97bc4', '#c46ea5', '#e0708f',
-  ];
-
-  // Color fijo de cada historia en el mapa (no cambia al pasar de una a otra).
-  function mapColor(story) {
-    var text = String(story.id || story.title || '');
+  // Cada historia tiene un color que sale de su id: es siempre el mismo, en todas las visitas.
+  function colorForId(id) {
+    var text = String(id || '');
     var hash = 0;
     for (var i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-    return MAP_LINE_COLORS[hash % MAP_LINE_COLORS.length];
+    return PALETTE[hash % PALETTE.length].base;
+  }
+
+  function mapColor(story) {
+    return lineColor(story.color);
+  }
+
+  // La base de datos solo acepta los 4 colores originales: se manda uno de esos.
+  function storedColor(base) {
+    var index = PALETTE.findIndex(function (color) {
+      return color.base === base;
+    });
+    return PALETTE[(index < 0 ? 0 : index) % 4].base;
   }
 
   function lineColor(base) {
@@ -221,7 +235,7 @@
       summary: summarize(firstText || ''),
       song: row.song,
       thought: row.thought,
-      color: PALETTE.some(function (c) { return c.base === row.color; }) ? row.color : randomColor(),
+      color: colorForId(row.id),
       stops: stops,
       loaded: full, // false: falta pedir el texto antes de leerla
     };
@@ -246,7 +260,7 @@
 
     if (!db) {
       stories = SAMPLE_STORIES.map(function (story) {
-        return Object.assign({}, story, { color: randomColor(), loaded: true });
+        return Object.assign({}, story, { color: colorForId(story.id), loaded: true });
       });
       storiesStatus = 'ready';
       return Promise.resolve();
@@ -297,7 +311,7 @@
 
     var request = db.rpc('publish_story', {
       p_title: story.title,
-      p_color: story.color,
+      p_color: storedColor(story.color),
       p_song: story.song,
       p_thought: story.thought,
       p_stops: story.stops,
@@ -662,9 +676,9 @@
             var big = id.indexOf('motorway') !== -1 || id.indexOf('major') !== -1;
             setPaint(id, 'line-width', [
               'interpolate', ['linear'], ['zoom'],
-              10, big ? 0.5 : 0.3,
-              14, big ? 1.2 : 0.7,
-              17, big ? 2.4 : 1.4,
+              10, big ? 0.4 : 0.25,
+              14, big ? 1 : 0.55,
+              17, big ? 2 : 1.1,
             ]);
           }
         } else if (type === 'symbol') {
@@ -708,7 +722,7 @@
         paint: {
           'line-color': ['get', 'color'],
           'line-opacity': 0.85,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 4, 17, 6],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6, 17, 9],
         },
       });
       // Línea invisible y ancha, para que los caminos finos sean fáciles de tocar.
@@ -725,7 +739,7 @@
         type: 'line',
         source: 'focus-route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 12, 14, 18, 17, 24], 'line-blur': 10, 'line-opacity': 0.5 },
+        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 16, 14, 24, 17, 32], 'line-blur': 10, 'line-opacity': 0.5 },
       });
       map.addLayer({
         id: 'focus-zones-glow',
@@ -750,7 +764,7 @@
         type: 'line',
         source: 'focus-route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 14, 6.5, 17, 9] },
+        paint: { 'line-gradient': MAP_COLORS.gold, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 5, 14, 8.5, 17, 12] },
       });
 
       // Borrador de la historia que se está contando.
@@ -1492,9 +1506,7 @@
     }
 
     function move(step) {
-      var previous = stories[currentIndex].color;
       currentIndex = (currentIndex + step + stories.length) % stories.length;
-      stories[currentIndex].color = randomColor(previous);
       show(true);
     }
 
@@ -1536,9 +1548,7 @@
         return story.id === id;
       });
       if (index === -1) return;
-      var previous = current ? current.color : null;
       currentIndex = index;
-      stories[currentIndex].color = randomColor(previous);
       show(true);
     });
 
@@ -1707,7 +1717,6 @@
         return;
       }
       var next = others[Math.floor(Math.random() * others.length)];
-      next.color = randomColor(story.color);
       currentIndex = stories.indexOf(next);
       location.hash = '#/historia/' + encodeURIComponent(next.id);
     }
