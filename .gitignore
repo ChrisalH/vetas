@@ -3,5 +3,5 @@ dist
 .env
 .env.local
 .DS_Store
-Claude outputs/
 .claude/
+supabase/

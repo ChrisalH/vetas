@@ -635,6 +635,81 @@ button {
   outline-offset: 3px;
 }
 
+/* Sugerencias de canciones */
+.suggest {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid rgb(255 255 255 / 0.12);
+}
+
+.suggest__option {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  cursor: pointer;
+}
+
+.suggest__option[aria-selected='true'] {
+  background: rgba(197, 194, 187, 0.12);
+}
+
+@media (hover: hover) {
+  .suggest__option:hover {
+    background: rgba(197, 194, 187, 0.12);
+  }
+}
+
+.suggest__cover {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 3px;
+  background: var(--ground);
+  object-fit: cover;
+}
+
+.suggest__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.suggest__title,
+.suggest__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggest__title {
+  font-size: 1.125rem;
+}
+
+.suggest__artist {
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+.suggest__status {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+  font-style: italic;
+}
+
+.suggest__status:empty {
+  display: none;
+}
+
+.suggest__chosen {
+  margin-top: 2px;
+}
+
 .field__error {
   min-height: 1.2em;
   margin: 0;
