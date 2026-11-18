@@ -63,12 +63,10 @@
     return lineColor(story.color);
   }
 
-  // La base de datos solo acepta los 4 colores originales: se manda uno de esos.
-  function storedColor(base) {
-    var index = PALETTE.findIndex(function (color) {
+  function isPaletteColor(base) {
+    return PALETTE.some(function (color) {
       return color.base === base;
     });
-    return PALETTE[(index < 0 ? 0 : index) % 4].base;
   }
 
   function lineColor(base) {
@@ -235,7 +233,8 @@
       summary: summarize(firstText || ''),
       song: row.song,
       thought: row.thought,
-      color: colorForId(row.id),
+      // El color viene guardado en Supabase. Si falta o no es de la paleta, sale del id.
+      color: isPaletteColor(row.color) ? row.color : colorForId(row.id),
       stops: stops,
       loaded: full, // false: falta pedir el texto antes de leerla
     };
@@ -311,7 +310,7 @@
 
     var request = db.rpc('publish_story', {
       p_title: story.title,
-      p_color: storedColor(story.color),
+      p_color: story.color,
       p_song: story.song,
       p_thought: story.thought,
       p_stops: story.stops,
