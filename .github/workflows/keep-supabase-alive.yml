@@ -1,0 +1,31 @@
+# Supabase free projects get paused after 7 days without activity.
+# This job makes one tiny public read per day so the project never looks idle.
+# It only uses the publishable key, which is already public in app.js.
+name: Keep Supabase alive
+
+on:
+  schedule:
+    # Every day at 12:17 UTC (off the hour: GitHub delays jobs queued at :00).
+    - cron: '17 12 * * *'
+  workflow_dispatch: # "Run workflow" button for manual runs
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://gffazflvzodgywnmaisp.supabase.co
+      SUPABASE_KEY: sb_publishable_ACoziBCbm3jgDse3zKNb2A_K18KKohB
+    steps:
+      - name: Read one story
+        run: |
+          # -f fails the job on a non-2xx response (e.g. project already paused),
+          # so GitHub emails a failure notice. Retries cover brief network hiccups.
+          curl -fsS --retry 3 --retry-delay 10 --max-time 30 \
+            "$SUPABASE_URL/rest/v1/stories?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY"
+          echo
+          echo "Supabase responded OK"
